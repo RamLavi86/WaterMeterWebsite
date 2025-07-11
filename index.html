@@ -32,7 +32,7 @@
 </head>
 <body>
   <div class="container">
-    <h2>Measurement Chart (Last Week)</h2>
+    <h2>Measurement Chart</h2>
     <div class="controls">
       <button onclick="setResolution('7d')">7D</button>
       <button onclick="setResolution('1d')">1D</button>
@@ -54,11 +54,7 @@
       rawData = Object.values(data).map(entry => ({
         measurement: entry.measurement,
         timestamp: new Date(entry.timestamp)
-      })).filter(entry => {
-        const oneWeekAgo = new Date();
-        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-        return entry.timestamp >= oneWeekAgo;
-      });
+      }));
       updateChart();
     }
 
@@ -67,33 +63,31 @@
       updateChart();
     }
 
-    function groupByResolution(data, resolution) {
-      const bucketed = {};
-      const getKey = (date) => {
-        const d = new Date(date);
-        if (resolution === '1h') d.setMinutes(0, 0, 0);
-        if (resolution === '10h') d.setHours(Math.floor(d.getHours() / 10) * 10, 0, 0, 0);
-        if (resolution === '1d') d.setHours(0, 0, 0, 0);
-        if (resolution === '7d') d.setDate(d.getDate() - d.getDay());
-        return d.toISOString();
-      };
-
-      for (const entry of data) {
-        const key = getKey(entry.timestamp);
-        if (!bucketed[key]) bucketed[key] = [];
-        bucketed[key].push(entry.measurement);
+    function filterByResolution(data, resolution) {
+      const now = new Date();
+      let cutoff;
+      switch (resolution) {
+        case '1h':
+          cutoff = new Date(now.getTime() - 60 * 60 * 1000);
+          break;
+        case '10h':
+          cutoff = new Date(now.getTime() - 10 * 60 * 60 * 1000);
+          break;
+        case '1d':
+          cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+          break;
+        case '7d':
+        default:
+          cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
       }
-
-      return Object.entries(bucketed).map(([time, values]) => ({
-        time,
-        value: values.reduce((a, b) => a + b, 0) / values.length
-      })).sort((a, b) => new Date(a.time) - new Date(b.time));
+      return data.filter(entry => entry.timestamp >= cutoff);
     }
 
     function updateChart() {
-      const grouped = groupByResolution(rawData, currentResolution);
-      const labels = grouped.map(e => new Date(e.time).toLocaleString());
-      const data = grouped.map(e => e.value);
+      const filtered = filterByResolution(rawData, currentResolution);
+      const labels = filtered.map(e => e.timestamp.toLocaleString());
+      const data = filtered.map(e => e.measurement);
 
       if (chart) chart.destroy();
 
