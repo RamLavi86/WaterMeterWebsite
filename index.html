@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Measurement Chart</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 800px;
+      margin: auto;
+    }
+    canvas {
+      width: 100% !important;
+      height: auto !important;
+    }
+    .controls {
+      margin-bottom: 1rem;
+      display: flex;
+      justify-content: space-around;
+    }
+    .controls button {
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Measurement Chart (Last Week)</h2>
+    <div class="controls">
+      <button onclick="setResolution('7d')">7D</button>
+      <button onclick="setResolution('1d')">1D</button>
+      <button onclick="setResolution('10h')">10H</button>
+      <button onclick="setResolution('1h')">1H</button>
+    </div>
+    <canvas id="chart"></canvas>
+  </div>
+
+  <script>
+    const DATA_URL = "https://watermeterupython-default-rtdb.firebaseio.com/meas.json"; // Replace with your real URL
+    let rawData = [];
+    let currentResolution = '7d';
+    let chart;
+
+    async function fetchData() {
+      const res = await fetch(DATA_URL);
+      const data = await res.json();
+      rawData = Object.values(data).map(entry => ({
+        measurement: entry.measurement,
+        timestamp: new Date(entry.timestamp)
+      })).filter(entry => {
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+        return entry.timestamp >= oneWeekAgo;
+      });
+      updateChart();
+    }
+
+    function setResolution(res) {
+      currentResolution = res;
+      updateChart();
+    }
+
+    function groupByResolution(data, resolution) {
+      const bucketed = {};
+      const getKey = (date) => {
+        const d = new Date(date);
+        if (resolution === '1h') d.setMinutes(0, 0, 0);
+        if (resolution === '10h') d.setHours(Math.floor(d.getHours() / 10) * 10, 0, 0, 0);
+        if (resolution === '1d') d.setHours(0, 0, 0, 0);
+        if (resolution === '7d') d.setDate(d.getDate() - d.getDay());
+        return d.toISOString();
+      };
+
+      for (const entry of data) {
+        const key = getKey(entry.timestamp);
+        if (!bucketed[key]) bucketed[key] = [];
+        bucketed[key].push(entry.measurement);
+      }
+
+      return Object.entries(bucketed).map(([time, values]) => ({
+        time,
+        value: values.reduce((a, b) => a + b, 0) / values.length
+      })).sort((a, b) => new Date(a.time) - new Date(b.time));
+    }
+
+    function updateChart() {
+      const grouped = groupByResolution(rawData, currentResolution);
+      const labels = grouped.map(e => new Date(e.time).toLocaleString());
+      const data = grouped.map(e => e.value);
+
+      if (chart) chart.destroy();
+
+      const ctx = document.getElementById('chart').getContext('2d');
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Measurement',
+            data,
+            fill: false,
+            borderColor: 'blue',
+            tension: 0.1
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: {
+              display: true,
+              title: { display: true, text: 'Time' }
+            },
+            y: {
+              display: true,
+              title: { display: true, text: 'Measurement' }
+            }
+          }
+        }
+      });
+    }
+
+    fetchData();
+  </script>
+</body>
+</html>
